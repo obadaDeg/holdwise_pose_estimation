@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dataset Manager</title>
+  <script src="https://cdn.jsdelivr.net/npm/streamsaver@2.0.5/StreamSaver.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .button { padding: 10px 20px; margin: 5px; cursor: pointer; border: none; background-color: #007BFF; color: white; border-radius: 5px; }
+    .button:hover { background-color: #0056b3; }
+    #datasets { margin-top: 20px; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Dataset Manager</h1>
+  <button class="button" id="listDatasets">List All Datasets</button>
+  <button class="button" id="downloadAll">Download All Datasets</button>
+  <button class="button" id="deleteAll">Delete All Datasets</button>
+
+  <div id="datasets"></div>
+  <div id="message" class="error"></div>
+
+  <script>
+    const API_URL   = 'https://dataset-collector.onrender.com';
+    const API_TOKEN = 'aboOmarWantSomeFood0101';
+
+    async function apiRequest(endpoint, method = 'GET') {
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: method,
+        headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Something went wrong');
+      }
+      return response.json();
+    }
+
+    async function listDatasets() {
+      const messageDiv = document.getElementById('message');
+      const datasetsDiv = document.getElementById('datasets');
+      messageDiv.textContent = '';
+      datasetsDiv.innerHTML = '';
+
+      console.log('Listing datasets...');
+      
+
+      try {
+        const datasets = await apiRequest('/list');
+        if (datasets.length === 0) {
+          datasetsDiv.textContent = 'No datasets available.';
+        } else {
+          datasetsDiv.innerHTML = `<ol>${datasets.map(ds => `<li>${ds}</li>`).join('')}</ol>`;
+        }
+      } catch (error) {
+        messageDiv.textContent = error.message;
+      }
+    }
+
+    document.getElementById('listDatasets').addEventListener('click', listDatasets);
+
+    // Periodically list datasets every 1 minute
+    // setInterval(listDatasets, 1000 * 30);
+
+    document.getElementById('downloadAll').addEventListener('click', async () => {
+      const messageDiv = document.getElementById('message');
+      messageDiv.textContent = '';
+
+      try {
+        const response = await fetch(`${API_URL}/all_stream`, {
+          headers: {
+            'Authorization': `Bearer ${API_TOKEN}`
+          }
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to download datasets');
+        }
+
+        // Use StreamSaver.js to stream directly to disk:
+        const fileStream = streamSaver.createWriteStream('all_datasets_streamed.zip');
+        const reader = response.body.getReader();
+        const writer = fileStream.getWriter();
+
+        // OPTIONAL: get Content-Length to show progress
+        const contentLength = response.headers.get('Content-Length');
+        let totalReceived = 0;
+
+        async function pump() {
+          const { done, value } = await reader.read();
+          if (done) {
+            writer.close();
+            messageDiv.textContent = 'Download completed!';
+            return;
+          }
+          totalReceived += value.length;
+          // Show progress if content-length is known
+          if (contentLength) {
+            const percent = ((totalReceived / contentLength) * 100).toFixed(2);
+            messageDiv.textContent = `Downloading... ${percent}%`;
+          }
+          await writer.write(value);
+          await pump();
+        }
+        await pump();
+      } catch (error) {
+        messageDiv.textContent = error.message;
+      }
+    });
+
+    document.getElementById('deleteAll').addEventListener('click', async () => {
+      const messageDiv = document.getElementById('message');
+      messageDiv.textContent = '';
+      try {
+        const response = await apiRequest('/delete_all');
+        messageDiv.textContent = response.message;
+        document.getElementById('datasets').innerHTML = '';
+      } catch (error) {
+        messageDiv.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>
